@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Disco Snake with Emoji Trail</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            cursor: none;
+        }
+        #gameCanvas {
+            display: block;
+            background-color: #111;
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+            text-shadow: 0 0 5px #fff;
+        }
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0,0,0,0.7);
+            color: white;
+            z-index: 100;
+        }
+        button {
+            background: linear-gradient(45deg, #ff00cc, #3333ff);
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            font-size: 16px;
+            margin: 20px 0;
+            cursor: pointer;
+            border-radius: 25px;
+            box-shadow: 0 0 15px rgba(255,0,204,0.7);
+            transition: all 0.3s;
+        }
+        button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 25px rgba(51,51,255,0.7);
+        }
+        h1 {
+            font-size: 48px;
+            text-shadow: 0 0 10px #ff00cc, 0 0 20px #3333ff;
+            margin-bottom: 20px;
+            animation: glow 2s infinite alternate;
+        }
+        @keyframes glow {
+            from {
+                text-shadow: 0 0 10px #ff00cc, 0 0 20px #3333ff;
+            }
+            to {
+                text-shadow: 0 0 15px #ff00cc, 0 0 30px #3333ff, 0 0 40px #ff00cc;
+            }
+        }
+        .emoji {
+            position: absolute;
+            font-size: 20px;
+            pointer-events: none;
+            z-index: 10;
+            transform: translate(-50%, -50%);
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="score">Score: 0</div>
+    <div id="startScreen">
+        <h1>DISCO SNAKE</h1>
+        <p>Use arrow keys to move. Collect the flashing food!</p>
+        <p>When paused, your cursor leaves an emoji trail!</p>
+        <button id="startButton">START CRAZINESS</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const startScreen = document.getElementById('startScreen');
+        const startButton = document.getElementById('startButton');
+        
+        // Set canvas to full window size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        // Game variables
+        let snake = [];
+        let food = {};
+        let direction = 'right';
+        let nextDirection = 'right';
+        let gameSpeed = 100;
+        let score = 0;
+        let gameLoop;
+        let isPlaying = false;
+        let lastFrameTime = 0;
+        
+        // Emoji trail variables
+        const emojis = ['🔥', '🌈', '🎮', '🐍', '🌟', '💎', '🍕', '👾', '🚀', '🎯'];
+        let emojiParticles = [];
+        let lastEmojiTime = 0;
+        const emojiInterval = 100;
+        
+        // Initialize game
+        function initGame() {
+            snake = [];
+            for (let i = 3; i >= 0; i--) {
+                snake.push({ x: i * 20, y: 0 });
+            }
+            
+            direction = 'right';
+            nextDirection = 'right';
+            score = 0;
+            scoreElement.textContent = `Score: ${score}`;
+            gameSpeed = 100;
+            
+            generateFood();
+        }
+        
+        // Generate food at random position
+        function generateFood() {
+            food = {
+                x: Math.floor(Math.random() * (canvas.width - 40) / 20) * 20 + 10,
+                y: Math.floor(Math.random() * (canvas.height - 40) / 20) * 20 + 10,
+                color: getRandomColor(),
+                size: 15,
+                pulseDirection: 1
+            };
+        }
+        
+        // Get random color
+        function getRandomColor() {
+            const colors = [
+                '#FF5252', '#FF4081', '#E040FB', '#7C4DFF', 
+                '#536DFE', '#448AFF', '#40C4FF', '#18FFFF', 
+                '#64FFDA', '#69F0AE', '#B2FF59', '#EEFF41', 
+                '#FFFF00', '#FFD740', '#FFAB40', '#FF6E40'
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+        
+        // Main game loop
+        function gameUpdate(timestamp) {
+            if (!isPlaying) {
+                updateEmojiTrail(timestamp);
+                requestAnimationFrame(gameUpdate);
+                return;
+            }
+            
+            if (timestamp - lastFrameTime < gameSpeed) {
+                requestAnimationFrame(gameUpdate);
+                return;
+            }
+            lastFrameTime = timestamp;
+            
+            // Move snake
+            const head = { x: snake[0].x, y: snake[0].y };
+            
+            direction = nextDirection;
+            
+            switch (direction) {
+                case 'up':
+                    head.y -= 20;
+                    break;
+                case 'down':
+                    head.y += 20;
+                    break;
+                case 'left':
+                    head.x -= 20;
+                    break;
+                case 'right':
+                    head.x += 20;
+                    break;
+            }
+            
+            // Wrap around screen
+            if (head.x < 0) head.x = canvas.width - 20;
+            if (head.x >= canvas.width) head.x = 0;
+            if (head.y < 0) head.y = canvas.height - 20;
+            if (head.y >= canvas.height) head.y = 0;
+            
+            // Check collision with self
+            for (let i = 0; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    gameOver();
+                    return;
+                }
+            }
+            
+            snake.unshift(head);
+            
+            // Check if snake ate food
+            const dist = Math.sqrt(Math.pow(head.x - food.x, 2) + Math.pow(head.y - food.y, 2));
+            if (dist < 20) {
+                score += 10;
+                scoreElement.textContent = `Score: ${score}`;
+                generateFood();
+                
+                // Increase speed every 50 points
+                if (score % 50 === 0 && gameSpeed > 50) {
+                    gameSpeed -= 5;
+                }
+            } else {
+                snake.pop();
+            }
+            
+            // Update food pulsing animation
+            food.size += food.pulseDirection * 0.5;
+            if (food.size > 20 || food.size < 10) {
+                food.pulseDirection *= -1;
+                if (food.size < 10) {
+                    food.color = getRandomColor();
+                }
+            }
+            
+            // Draw everything
+            draw();
+            
+            requestAnimationFrame(gameUpdate);
+        }
+        
+        // Draw game elements
+        function draw() {
+            // Clear canvas with fading effect
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw disco background grid
+            drawDiscoGrid();
+            
+            // Draw snake
+            for (let i = 0; i < snake.length; i++) {
+                const segment = snake[i];
+                const hue = (Date.now() / 50 + i * 5) % 360;
+                ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                ctx.beginPath();
+                ctx.arc(segment.x + 10, segment.y + 10, 10, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add glow effect
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+            }
+            ctx.shadowBlur = 0;
+            
+            // Draw food
+            ctx.fillStyle = food.color;
+            ctx.beginPath();
+            ctx.arc(food.x, food.y, food.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add glow to food
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = food.color;
+            ctx.beginPath();
+            ctx.arc(food.x, food.y, food.size / 2 + 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // Draw emoji particles
+            drawEmojiParticles();
+        }
+        
+        // Draw disco grid background
+        function drawDiscoGrid() {
+            const gridSize = 40;
+            const now = Date.now();
+            
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                for (let y = 0; y < canvas.height; y += gridSize) {
+                    const hue = (x + y + now / 10) % 360;
+                    ctx.fillStyle = `hsla(${hue}, 80%, 50%, 0.1)`;
+                    ctx.fillRect(x, y, gridSize, gridSize);
+                }
+            }
+        }
+        
+        // Update emoji trail when game is paused
+        function updateEmojiTrail(timestamp) {
+            if (timestamp - lastEmojiTime > emojiInterval) {
+                lastEmojiTime = timestamp;
+                
+                // Add new emoji at mouse position
+                if (mouseX && mouseY) {
+                    emojiParticles.push({
+                        x: mouseX,
+                        y: mouseY,
+                        emoji: emojis[Math.floor(Math.random() * emojis.length)],
+                        size: Math.random() * 15 + 10,
+                        life: 1000,
+                        rotation: Math.random() * 360,
+                        rotationSpeed: (Math.random() - 0.5) * 10,
+                        velocity: {
+                            x: (Math.random() - 0.5) * 2,
+                            y: (Math.random() - 0.5) * 2
+                        },
+                        opacity: 1
+                    });
+                }
+            }
+            
+            // Update existing emojis
+            for (let i = emojiParticles.length - 1; i >= 0; i--) {
+                const emoji = emojiParticles[i];
+                emoji.x += emoji.velocity.x;
+                emoji.y += emoji.velocity.y;
+                emoji.life -= emojiInterval;
+                emoji.rotation += emoji.rotationSpeed;
+                emoji.opacity = emoji.life / 1000;
+                
+                if (emoji.life <= 0) {
+                    emojiParticles.splice(i, 1);
+                }
+            }
+            
+            // Draw everything
+            draw();
+        }
+        
+        // Draw emoji particles
+        function drawEmojiParticles() {
+            ctx.save();
+            emojiParticles.forEach(emoji => {
+                ctx.globalAlpha = emoji.opacity;
+                ctx.font = `${emoji.size}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.translate(emoji.x, emoji.y);
+                ctx.rotate(emoji.rotation * Math.PI / 180);
+                ctx.fillText(emoji.emoji, 0, 0);
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+            });
+            ctx.restore();
+        }
+        
+        // Game over
+        function gameOver() {
+            isPlaying = false;
+            startScreen.style.display = 'flex';
+            startButton.textContent = 'TRY AGAIN';
+            
+            // Create explosion of emojis
+            const head = snake[0];
+            for (let i = 0; i < 50; i++) {
+                emojiParticles.push({
+                    x: head.x + 10,
+                    y: head.y + 10,
+                    emoji: emojis[Math.floor(Math.random() * emojis.length)],
+                    size: Math.random() * 20 + 10,
+                    life: Math.random() * 1000 + 500,
+                    rotation: Math.random() * 360,
+                    rotationSpeed: (Math.random() - 0.5) * 20,
+                    velocity: {
+                        x: (Math.random() - 0.5) * 10,
+                        y: (Math.random() - 0.5) * 10
+                    },
+                    opacity: 1
+                });
+            }
+        }
+        
+        // Mouse movement tracking
+        let mouseX = 0;
+        let mouseY = 0;
+        
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+        
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (!isPlaying) return;
+            
+            switch (e.key) {
+                case 'ArrowUp':
+                    if (direction !== 'down') nextDirection = 'up';
+                    break;
+                case 'ArrowDown':
+                    if (direction !== 'up') nextDirection = 'down';
+                    break;
+                case 'ArrowLeft':
+                    if (direction !== 'right') nextDirection = 'left';
+                    break;
+                case 'ArrowRight':
+                    if (direction !== 'left') nextDirection = 'right';
+                    break;
+                case ' ':
+                    // Pause game
+                    isPlaying = false;
+                    startScreen.style.display = 'flex';
+                    startButton.textContent = 'RESUME';
+                    break;
+            }
+        });
+        
+        // Start button click
+        startButton.addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            isPlaying = true;
+            initGame();
+            requestAnimationFrame(gameUpdate);
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+        
+        // Initial draw
+        draw();
+    </script>
+</body>
+</html>
